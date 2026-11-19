@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GovComm Cryptographic Audit Ledger</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 24px; }
+    .container { max-width: 1200px; margin: auto; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .badge { padding: 6px 14px; border-radius: 999px; font-weight: 700; font-size: 0.85rem; }
+    .intact { background: #14532d; color: #86efac; }
+    .compromised { background: #7f1d1d; color: #fca5a5; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 16px; margin-bottom: 18px; }
+    input, select, button { padding: 8px 10px; border-radius: 6px; border: 1px solid #475569; background: #0f172a; color: #f8fafc; margin-top: 6px; width: 100%; box-sizing: border-box; }
+    button { background: #2563eb; border: none; font-weight: 600; cursor: pointer; margin-top: 10px; }
+    button:hover { background: #1d4ed8; }
+    .verify-btn { background: #059669; width: auto; padding: 10px 18px; margin-top: 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.88rem; }
+    th, td { border-bottom: 1px solid #334155; padding: 8px; text-align: left; }
+    .status-VERIFIED, .status-AUTHENTIC { color: #4ade80; font-weight: 700; }
+    .status-TAMPERED, .status-MISSING_FILE { color: #f87171; font-weight: 700; }
+    .status-FLAGGED_COMPROMISED { color: #fbbf24; font-weight: 700; }
+    .mono { font-family: monospace; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h2>Cryptographic Communication Audit Ledger</h2>
+        <small>SHA-256 Hash Chaining &amp; File Digest Verification</small>
+      </div>
+      <div style="display:flex; gap:12px; align-items:center;">
+        <span id="overall-badge" class="badge intact">CHECKING...</span>
+        <button class="verify-btn" onclick="runAudit()">Run Automated Verification</button>
+      </div>
+    </header>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>Send Official Message</h3>
+        <form id="msg-form">
+          <label>Sender</label>
+          <select id="msg-sender"></select>
+          <label>Channel</label>
+          <input id="msg-channel" value="Policy-Coordination" required />
+          <label>Message Content</label>
+          <input id="msg-body" placeholder="Enter official communication..." required />
+          <button type="submit">Append &amp; Hash Message</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3>Share File with SHA-256 Seal</h3>
+        <form id="file-form" enctype="multipart/form-data">
+          <label>Uploader</label>
+          <select id="file-sender"></select>
+          <label>Channel</label>
+          <input id="file-channel" value="Document-Room" required />
+          <label>Select Document / File</label>
+          <input type="file" id="file-input" required />
+          <button type="submit">Upload &amp; Seal Digest</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Tamper &amp; Anomaly Alerts</h3>
+      <table>
+        <thead>
+          <tr><th>Type</th><th>Target</th><th>Details</th><th>Detected</th></tr>
+        </thead>
+        <tbody id="alerts-tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h3>Message Hash-Chain Verification</h3>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Sender</th><th>Channel</th><th>Message</th><th>Prev Hash</th><th>Current Hash</th><th>Status</th></tr>
+        </thead>
+        <tbody id="messages-tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h3>Shared File Authenticity</h3>
+      <table>
+        <thead>
+          <tr><th>ID</th><th>Filename</th><th>Uploader</th><th>Recorded SHA-256</th><th>Actual SHA-256</th><th>Status</th></tr>
+        </thead>
+        <tbody id="files-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    async function loadUsers() {
+      const res = await fetch('/api/users');
+      const users = await res.json();
+      const options = users.map(u => `<option value="${u.id}">${u.full_name} (${u.account_status})</option>`).join('');
+      document.getElementById('msg-sender').innerHTML = options;
+      document.getElementById('file-sender').innerHTML = options;
+    }
+
+    async function runAudit() {
+      const res = await fetch('/api/verify', { method: 'POST' });
+      const data = await res.json();
+
+      const badge = document.getElementById('overall-badge');
+      badge.textContent = `LEDGER: ${data.overall_integrity}`;
+      badge.className = `badge ${data.overall_integrity === 'INTACT' ? 'intact' : 'compromised'}`;
+
+      document.getElementById('alerts-tbody').innerHTML = data.alerts.length
+        ? data.alerts.map(a => `<tr><td>${a.alert_type}</td><td>${a.target_table}:${a.target_id}</td><td>${a.details}</td><td>${a.detected_at}</td></tr>`).join('')
+        : '<tr><td colspan="4">No tamper alerts detected.</td></tr>';
+
+      document.getElementById('messages-tbody').innerHTML = data.messages.map(m => `
+        <tr>
+          <td>${m.id}</td>
+          <td>${m.sender_name}</td>
+          <td>${m.channel_name}</td>
+          <td>${m.message_body}</td>
+          <td class="mono">${m.prev_hash.slice(0, 14)}...</td>
+          <td class="mono">${m.current_hash.slice(0, 14)}...</td>
+          <td class="status-${m.status}">${m.status}${m.reasons.length ? '<br><small>' + m.reasons.join('; ') + '</small>' : ''}</td>
+        </tr>
+      `).join('');
+
+      document.getElementById('files-tbody').innerHTML = data.files.map(f => `
+        <tr>
+          <td>${f.id}</td>
+          <td>${f.filename}</td>
+          <td>${f.uploader_name}</td>
+          <td class="mono">${f.recorded_sha256.slice(0, 16)}...</td>
+          <td class="mono">${f.actual_sha256.slice(0, 16)}...</td>
+          <td class="status-${f.status}">${f.status}</td>
+        </tr>
+      `).join('');
+    }
+
+    document.getElementById('msg-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sender_id: Number(document.getElementById('msg-sender').value),
+          channel_name: document.getElementById('msg-channel').value,
+          message_body: document.getElementById('msg-body').value
+        })
+      });
+      document.getElementById('msg-body').value = '';
+      await runAudit();
+    });
+
+    document.getElementById('file-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData();
+      fd.append('sender_id', document.getElementById('file-sender').value);
+      fd.append('channel_name', document.getElementById('file-channel').value);
+      fd.append('file', document.getElementById('file-input').files[0]);
+      await fetch('/api/files/upload', { method: 'POST', body: fd });
+      document.getElementById('file-input').value = '';
+      await runAudit();
+    });
+
+    (async () => {
+      await loadUsers();
+      await runAudit();
+    })();
+  </script>
+</body>
+</html>
